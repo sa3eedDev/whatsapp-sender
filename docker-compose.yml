@@ -1,10 +1,11 @@
 services:
   whatsapp-sender:
     build: .
-    # Coolify's proxy routes to this container port directly; the host port
-    # mapping is only needed when running locally without a reverse proxy.
+    # Behind Coolify/Traefik the proxy terminates HTTPS and forwards to this
+    # container port; nothing else is needed for https:// to work.
     expose:
       - "3000"
+    # Host port mapping is only for running locally without a reverse proxy.
     ports:
       - "3000:3000"
     volumes:
@@ -16,6 +17,13 @@ services:
       - PORT=3000
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
       - WWEBJS_AUTH_PATH=/data/.wwebjs_auth
+      # To serve HTTPS directly from the app (no reverse proxy), mount your
+      # certificate into the container and uncomment:
+      # - SSL_CERT_PATH=/certs/fullchain.pem
+      # - SSL_KEY_PATH=/certs/privkey.pem
+    # ...and mount the certs, e.g.:
+    # volumes:
+    #   - /etc/letsencrypt/live/example.com:/certs:ro
 
 volumes:
   wwebjs_auth:

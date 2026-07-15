@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
+const https = require("https");
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
@@ -9,7 +10,6 @@ const XLSX = require("xlsx");
 const { Server } = require("socket.io");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 
-const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const UPLOAD_PATH = path.join(UPLOAD_DIR, "contacts.xlsx");
 
@@ -18,8 +18,28 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 const app = express();
-const server = http.createServer(app);
+
+// Serve HTTPS directly when a certificate is provided (SSL_CERT_PATH +
+// SSL_KEY_PATH). Otherwise serve plain HTTP — behind a reverse proxy such
+// as Coolify/Traefik, the proxy terminates TLS and this stays HTTP internally.
+const useTls = Boolean(process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH);
+const PORT = process.env.PORT || (useTls ? 443 : 3000);
+
+const server = useTls
+  ? https.createServer(
+      {
+        cert: fs.readFileSync(process.env.SSL_CERT_PATH),
+        key: fs.readFileSync(process.env.SSL_KEY_PATH),
+      },
+      app
+    )
+  : http.createServer(app);
+
 const io = new Server(server);
+
+// Behind an HTTPS-terminating proxy, trust X-Forwarded-* headers so the app
+// sees the original protocol and client IP.
+app.set("trust proxy", 1);
 
 app.use(cors());
 app.use(express.json());
@@ -288,7 +308,8 @@ if (fs.existsSync(path.join(__dirname, "whatsapp.xlsx"))) {
 }
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`WhatsApp Sender UI → http://localhost:${PORT}`);
+  const proto = useTls ? "https" : "http";
+  console.log(`WhatsApp Sender UI → ${proto}://localhost:${PORT}`);
   state.status = "initializing";
   emitState();
   initializeClient();
