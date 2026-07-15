@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WhatsApp Sender</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <main class="shell">
+      <header class="header">
+        <div>
+          <p class="eyebrow">Bulk messenger</p>
+          <h1>WhatsApp Sender</h1>
+        </div>
+        <div class="status-pill" id="statusPill" data-status="initializing">
+          <span class="status-dot"></span>
+          <span id="statusText">Connecting…</span>
+        </div>
+      </header>
+
+      <section class="layout">
+        <article class="panel qr-panel">
+          <h2>1. Scan QR code</h2>
+          <p class="hint">Open WhatsApp → Linked devices → Link a device</p>
+          <div class="qr-frame" id="qrFrame">
+            <div class="qr-placeholder" id="qrPlaceholder">
+              <div class="spinner"></div>
+              <p>Waiting for QR…</p>
+            </div>
+            <img id="qrImage" class="qr-image hidden" alt="WhatsApp QR code" />
+            <div class="ready-badge hidden" id="readyBadge">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
+                <path
+                  d="M7 12.5l3.2 3.2L17 8.5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <p>Connected</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel upload-panel">
+          <h2>2. Upload Excel</h2>
+          <p class="hint">
+            Columns: <code>الرقم</code> (phone) and <code>الرساله</code> (message)
+          </p>
+
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input
+              type="file"
+              id="fileInput"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              hidden
+            />
+            <div class="dropzone-inner">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" aria-hidden="true">
+                <path
+                  d="M12 16V4m0 0l-4 4m4-4l4 4"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <p id="dropLabel">Drop Excel here or click to browse</p>
+              <span class="muted">.xlsx / .xls up to 10 MB</span>
+            </div>
+          </label>
+
+          <div class="file-meta" id="fileMeta">
+            <span id="fileName">No file selected</span>
+            <span id="rowCount" class="muted">0 contacts</span>
+          </div>
+
+          <button type="button" class="btn primary" id="sendBtn" disabled>
+            Send messages
+          </button>
+
+          <div class="progress-wrap hidden" id="progressWrap">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p class="progress-text" id="progressText">0 / 0</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="log-header">
+          <h2>Activity</h2>
+          <button type="button" class="btn ghost" id="clearLogs">Clear</button>
+        </div>
+        <ul class="log-list" id="logList"></ul>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
