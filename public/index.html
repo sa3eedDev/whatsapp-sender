@@ -91,6 +91,20 @@
             <span id="rowCount" class="muted">0 contacts</span>
           </div>
 
+          <label class="alter-toggle" for="alterMessage">
+            <input type="checkbox" id="alterMessage" />
+            <span>Alter the message for all recipients</span>
+          </label>
+
+          <div class="alter-box hidden" id="alterBox">
+            <label class="alter-label" for="overrideMessage">New message</label>
+            <textarea
+              id="overrideMessage"
+              rows="4"
+              placeholder="This message will be sent to every recipient instead of the Excel message"
+            ></textarea>
+          </div>
+
           <button type="button" class="btn primary" id="sendBtn" disabled>
             Send messages
           </button>
@@ -102,6 +116,28 @@
             <p class="progress-text" id="progressText">0 / 0</p>
           </div>
         </article>
+      </section>
+
+      <section class="panel files-panel">
+        <h2>Uploaded files</h2>
+        <p class="hint">Reuse a previous Excel file without uploading it again</p>
+
+        <label class="alter-toggle" for="alterMessageFiles">
+          <input type="checkbox" id="alterMessageFiles" />
+          <span>Alter the message for all recipients</span>
+        </label>
+
+        <div class="alter-box hidden" id="alterBoxFiles">
+          <label class="alter-label" for="overrideMessageFiles">New message</label>
+          <textarea
+            id="overrideMessageFiles"
+            rows="4"
+            placeholder="This message will be sent to every recipient instead of the Excel message"
+          ></textarea>
+        </div>
+
+        <ul class="file-list" id="fileList"></ul>
+        <p class="muted files-empty" id="filesEmpty">Nothing uploaded yet</p>
       </section>
 
       <section class="panel log-panel">

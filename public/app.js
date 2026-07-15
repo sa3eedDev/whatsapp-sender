@@ -16,6 +16,75 @@ const progressFill = document.getElementById("progressFill");
 const progressText = document.getElementById("progressText");
 const logList = document.getElementById("logList");
 const clearLogsBtn = document.getElementById("clearLogs");
+const fileList = document.getElementById("fileList");
+const filesEmpty = document.getElementById("filesEmpty");
+const alterMessage = document.getElementById("alterMessage");
+const alterBox = document.getElementById("alterBox");
+const overrideMessage = document.getElementById("overrideMessage");
+const alterMessageFiles = document.getElementById("alterMessageFiles");
+const alterBoxFiles = document.getElementById("alterBoxFiles");
+const overrideMessageFiles = document.getElementById("overrideMessageFiles");
+
+function isAlterEnabled() {
+  return alterMessage.checked || alterMessageFiles.checked;
+}
+
+function getOverrideText() {
+  if (alterMessage.checked) return overrideMessage.value.trim();
+  if (alterMessageFiles.checked) return overrideMessageFiles.value.trim();
+  return "";
+}
+
+function getSendPayload(extra = {}) {
+  const payload = { ...extra };
+  if (isAlterEnabled()) {
+    payload.alterMessage = true;
+    payload.overrideMessage = getOverrideText();
+  }
+  return payload;
+}
+
+function validateOverride() {
+  if (!isAlterEnabled()) return true;
+  if (!getOverrideText()) {
+    alert("Write the new message before sending");
+    const focusEl = alterMessage.checked ? overrideMessage : overrideMessageFiles;
+    focusEl.focus();
+    return false;
+  }
+  return true;
+}
+
+function syncAlterFrom(source) {
+  const enabled = source === "upload" ? alterMessage.checked : alterMessageFiles.checked;
+  const text =
+    source === "upload" ? overrideMessage.value : overrideMessageFiles.value;
+
+  alterMessage.checked = enabled;
+  alterMessageFiles.checked = enabled;
+  alterBox.classList.toggle("hidden", !enabled);
+  alterBoxFiles.classList.toggle("hidden", !enabled);
+
+  if (source === "upload") {
+    overrideMessageFiles.value = text;
+  } else {
+    overrideMessage.value = text;
+  }
+
+  if (enabled) {
+    const focusEl = source === "upload" ? overrideMessage : overrideMessageFiles;
+    focusEl.focus();
+  }
+}
+
+alterMessage.addEventListener("change", () => syncAlterFrom("upload"));
+alterMessageFiles.addEventListener("change", () => syncAlterFrom("files"));
+overrideMessage.addEventListener("input", () => {
+  overrideMessageFiles.value = overrideMessage.value;
+});
+overrideMessageFiles.addEventListener("input", () => {
+  overrideMessage.value = overrideMessageFiles.value;
+});
 
 const STATUS_LABELS = {
   initializing: "Connecting…",
@@ -72,6 +141,100 @@ function applyState(state) {
     logList.innerHTML = "";
     state.logs.forEach(appendLog);
     logList.scrollTop = logList.scrollHeight;
+  }
+
+  if (Array.isArray(state.files)) {
+    renderFiles(state.files, state);
+  }
+}
+
+const SEND_ICON =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M4 12l16-7-5 16-3.5-6L4 12z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+const DELETE_ICON =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
+function renderFiles(files, state) {
+  fileList.innerHTML = "";
+  filesEmpty.classList.toggle("hidden", files.length > 0);
+
+  const canSend = state.ready && !state.sending;
+
+  files.forEach((file) => {
+    const li = document.createElement("li");
+    li.className = "file-item";
+
+    const info = document.createElement("div");
+    info.className = "file-info";
+
+    const name = document.createElement("span");
+    name.className = "file-name";
+    name.textContent = file.name;
+
+    const meta = document.createElement("span");
+    meta.className = "muted file-sub";
+    const when = new Date(file.uploadedAt).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    meta.textContent = `${file.rowCount} contacts · ${when}`;
+
+    info.append(name, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "file-actions";
+
+    const sendIconBtn = document.createElement("button");
+    sendIconBtn.type = "button";
+    sendIconBtn.className = "icon-btn send";
+    sendIconBtn.title = "Send messages from this file";
+    sendIconBtn.innerHTML = SEND_ICON;
+    sendIconBtn.disabled = !canSend;
+    sendIconBtn.addEventListener("click", () => sendFromFile(file));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "icon-btn delete";
+    deleteBtn.title = "Delete this file";
+    deleteBtn.innerHTML = DELETE_ICON;
+    deleteBtn.addEventListener("click", () => deleteFile(file));
+
+    actions.append(sendIconBtn, deleteBtn);
+    li.append(info, actions);
+    fileList.appendChild(li);
+  });
+}
+
+async function sendFromFile(file) {
+  if (!validateOverride()) return;
+  if (!confirm(`Send messages to ${file.rowCount} contacts from "${file.name}"?`)) {
+    return;
+  }
+  try {
+    const res = await fetch("/api/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getSendPayload({ fileId: file.id })),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Send failed");
+    progressWrap.classList.remove("hidden");
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteFile(file) {
+  if (!confirm(`Delete "${file.name}"?`)) return;
+  try {
+    const res = await fetch(`/api/files/${encodeURIComponent(file.id)}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Delete failed");
+  } catch (err) {
+    alert(err.message);
   }
 }
 
@@ -134,10 +297,15 @@ dropzone.addEventListener("drop", (e) => {
 });
 
 sendBtn.addEventListener("click", async () => {
+  if (!validateOverride()) return;
   sendBtn.disabled = true;
   sendBtn.textContent = "Starting…";
   try {
-    const res = await fetch("/api/send", { method: "POST" });
+    const res = await fetch("/api/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getSendPayload()),
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Send failed");
     progressWrap.classList.remove("hidden");

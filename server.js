@@ -11,10 +11,27 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 
 const PORT = process.env.PORT || 80;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
-const UPLOAD_PATH = path.join(UPLOAD_DIR, "contacts.xlsx");
+const MANIFEST_PATH = path.join(UPLOAD_DIR, "files.json");
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Library of previously uploaded Excel files, persisted alongside the
+// files themselves so it survives restarts.
+let uploadedFiles = [];
+try {
+  if (fs.existsSync(MANIFEST_PATH)) {
+    uploadedFiles = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")).filter(
+      (f) => fs.existsSync(path.join(UPLOAD_DIR, f.storedName))
+    );
+  }
+} catch (_) {
+  uploadedFiles = [];
+}
+
+function saveManifest() {
+  fs.writeFileSync(MANIFEST_PATH, JSON.stringify(uploadedFiles, null, 2));
 }
 
 const app = express();
@@ -28,7 +45,10 @@ app.use(express.static(path.join(__dirname, "public")));
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
-    filename: (_req, _file, cb) => cb(null, "contacts.xlsx"),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || ".xlsx";
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    },
   }),
   fileFilter: (_req, file, cb) => {
     const ok =
@@ -51,8 +71,8 @@ const state = {
   logs: [],
 };
 
-function emitState() {
-  io.emit("state", {
+function snapshot() {
+  return {
     status: state.status,
     qrDataUrl: state.qrDataUrl,
     ready: state.ready,
@@ -61,7 +81,17 @@ function emitState() {
     rowCount: state.rows.length,
     progress: state.progress,
     logs: state.logs.slice(-50),
-  });
+    files: uploadedFiles.map((f) => ({
+      id: f.id,
+      name: f.originalName,
+      rowCount: f.rowCount,
+      uploadedAt: f.uploadedAt,
+    })),
+  };
+}
+
+function emitState() {
+  io.emit("state", snapshot());
 }
 
 function addLog(message, type = "info") {
@@ -84,7 +114,7 @@ function loadExcel(filePath, originalName) {
       const message = row["الرساله"] ?? row.message ?? row.Message ?? "";
       return { index, phone, message: String(message) };
     })
-    .filter((row) => row.phone && row.message);
+    .filter((row) => row.phone);
 
   state.fileName = originalName || path.basename(filePath);
   state.rows = rows;
@@ -183,16 +213,7 @@ process.on("unhandledRejection", (err) => {
 });
 
 app.get("/api/state", (_req, res) => {
-  res.json({
-    status: state.status,
-    qrDataUrl: state.qrDataUrl,
-    ready: state.ready,
-    sending: state.sending,
-    fileName: state.fileName,
-    rowCount: state.rows.length,
-    progress: state.progress,
-    logs: state.logs.slice(-50),
-  });
+  res.json(snapshot());
 });
 
 app.post("/api/upload", upload.single("file"), (req, res) => {
@@ -202,6 +223,16 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
     }
 
     const rows = loadExcel(req.file.path, req.file.originalname);
+
+    uploadedFiles.unshift({
+      id: path.parse(req.file.filename).name,
+      originalName: req.file.originalname,
+      storedName: req.file.filename,
+      rowCount: rows.length,
+      uploadedAt: new Date().toISOString(),
+    });
+    saveManifest();
+
     addLog(
       `Loaded ${rows.length} contacts from ${req.file.originalname}`,
       "success"
@@ -215,39 +246,80 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
       preview: rows.slice(0, 5),
     });
   } catch (err) {
+    if (req.file) fs.rmSync(req.file.path, { force: true });
     addLog(`Upload failed: ${err.message}`, "error");
     res.status(400).json({ error: err.message });
   }
 });
 
-app.post("/api/send", async (_req, res) => {
+app.delete("/api/files/:id", (req, res) => {
+  const idx = uploadedFiles.findIndex((f) => f.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "File not found" });
+  }
+  const [file] = uploadedFiles.splice(idx, 1);
+  fs.rmSync(path.join(UPLOAD_DIR, file.storedName), { force: true });
+  saveManifest();
+  addLog(`Deleted ${file.originalName}`, "info");
+  emitState();
+  res.json({ ok: true });
+});
+
+app.post("/api/send", async (req, res) => {
   if (!state.ready) {
     return res.status(400).json({ error: "WhatsApp is not ready yet" });
   }
   if (state.sending) {
     return res.status(400).json({ error: "Already sending messages" });
   }
-  if (!state.rows.length) {
-    if (fs.existsSync(UPLOAD_PATH)) {
-      loadExcel(UPLOAD_PATH, state.fileName || "contacts.xlsx");
-    } else if (fs.existsSync(path.join(__dirname, "whatsapp.xlsx"))) {
-      loadExcel(path.join(__dirname, "whatsapp.xlsx"), "whatsapp.xlsx");
+
+  const body = req.body || {};
+  const fileId = body.fileId;
+  const overrideMessage =
+    typeof body.overrideMessage === "string" ? body.overrideMessage.trim() : "";
+
+  if (fileId) {
+    const file = uploadedFiles.find((f) => f.id === fileId);
+    if (!file) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    try {
+      loadExcel(path.join(UPLOAD_DIR, file.storedName), file.originalName);
+    } catch (err) {
+      return res.status(400).json({ error: `Could not read file: ${err.message}` });
     }
   }
+
   if (!state.rows.length) {
     return res.status(400).json({ error: "Upload an Excel file first" });
   }
 
+  if (body.alterMessage && !overrideMessage) {
+    return res.status(400).json({ error: "Write the new message before sending" });
+  }
+
   state.sending = true;
   state.progress = { total: state.rows.length, sent: 0, failed: 0 };
-  addLog(`Sending ${state.rows.length} messages…`, "info");
+  addLog(
+    overrideMessage
+      ? `Sending custom message to ${state.rows.length} contacts…`
+      : `Sending ${state.rows.length} messages…`,
+    "info"
+  );
   emitState();
   res.json({ ok: true, total: state.rows.length });
 
   for (const row of state.rows) {
     const chatId = toChatId(row.phone);
+    const message = overrideMessage || String(row.message || "").trim();
+    if (!message) {
+      state.progress.failed += 1;
+      addLog(`Failed ${row.phone}: no message`, "error");
+      emitState();
+      continue;
+    }
     try {
-      await client.sendMessage(chatId, row.message);
+      await client.sendMessage(chatId, message);
       state.progress.sent += 1;
       addLog(`Sent to ${row.phone}`, "success");
     } catch (err) {
@@ -267,25 +339,8 @@ app.post("/api/send", async (_req, res) => {
 });
 
 io.on("connection", (socket) => {
-  socket.emit("state", {
-    status: state.status,
-    qrDataUrl: state.qrDataUrl,
-    ready: state.ready,
-    sending: state.sending,
-    fileName: state.fileName,
-    rowCount: state.rows.length,
-    progress: state.progress,
-    logs: state.logs.slice(-50),
-  });
+  socket.emit("state", snapshot());
 });
-
-if (fs.existsSync(path.join(__dirname, "whatsapp.xlsx"))) {
-  try {
-    loadExcel(path.join(__dirname, "whatsapp.xlsx"), "whatsapp.xlsx");
-  } catch (_) {
-    /* ignore preload errors */
-  }
-}
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`WhatsApp Sender UI → http://localhost:${PORT}`);
