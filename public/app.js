@@ -24,6 +24,19 @@ const overrideMessage = document.getElementById("overrideMessage");
 const alterMessageFiles = document.getElementById("alterMessageFiles");
 const alterBoxFiles = document.getElementById("alterBoxFiles");
 const overrideMessageFiles = document.getElementById("overrideMessageFiles");
+const alterImage = document.getElementById("alterImage");
+const alterImageFiles = document.getElementById("alterImageFiles");
+const alterImagePreview = document.getElementById("alterImagePreview");
+const alterImagePreviewFiles = document.getElementById("alterImagePreviewFiles");
+const alterImageThumb = document.getElementById("alterImageThumb");
+const alterImageThumbFiles = document.getElementById("alterImageThumbFiles");
+const alterImageName = document.getElementById("alterImageName");
+const alterImageNameFiles = document.getElementById("alterImageNameFiles");
+const alterImageClear = document.getElementById("alterImageClear");
+const alterImageClearFiles = document.getElementById("alterImageClearFiles");
+
+let selectedImageFile = null;
+let selectedImageUrl = null;
 
 function isAlterEnabled() {
   return alterMessage.checked || alterMessageFiles.checked;
@@ -32,7 +45,24 @@ function isAlterEnabled() {
 function getOverrideText() {
   if (alterMessage.checked) return overrideMessage.value.trim();
   if (alterMessageFiles.checked) return overrideMessageFiles.value.trim();
-  return "";
+  return overrideMessage.value.trim() || overrideMessageFiles.value.trim();
+}
+
+function buildSendBody(extra = {}) {
+  const payload = getSendPayload(extra);
+  if (!payload.alterMessage && !selectedImageFile) {
+    return {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    };
+  }
+
+  const form = new FormData();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) form.append(key, String(value));
+  });
+  if (selectedImageFile) form.append("image", selectedImageFile);
+  return { body: form };
 }
 
 function getSendPayload(extra = {}) {
@@ -46,13 +76,51 @@ function getSendPayload(extra = {}) {
 
 function validateOverride() {
   if (!isAlterEnabled()) return true;
-  if (!getOverrideText()) {
-    alert("Write the new message before sending");
+  if (!getOverrideText() && !selectedImageFile) {
+    alert("Write a message or upload a picture before sending");
     const focusEl = alterMessage.checked ? overrideMessage : overrideMessageFiles;
     focusEl.focus();
     return false;
   }
   return true;
+}
+
+function clearSelectedImage() {
+  selectedImageFile = null;
+  if (selectedImageUrl) {
+    URL.revokeObjectURL(selectedImageUrl);
+    selectedImageUrl = null;
+  }
+  alterImage.value = "";
+  alterImageFiles.value = "";
+  alterImagePreview.classList.add("hidden");
+  alterImagePreviewFiles.classList.add("hidden");
+  alterImageThumb.removeAttribute("src");
+  alterImageThumbFiles.removeAttribute("src");
+  alterImageName.textContent = "picture";
+  alterImageNameFiles.textContent = "picture";
+}
+
+function setSelectedImage(file) {
+  if (!file) {
+    clearSelectedImage();
+    return;
+  }
+  if (!file.type.startsWith("image/")) {
+    alert("Only image files are allowed");
+    return;
+  }
+
+  selectedImageFile = file;
+  if (selectedImageUrl) URL.revokeObjectURL(selectedImageUrl);
+  selectedImageUrl = URL.createObjectURL(file);
+
+  alterImageThumb.src = selectedImageUrl;
+  alterImageThumbFiles.src = selectedImageUrl;
+  alterImageName.textContent = file.name;
+  alterImageNameFiles.textContent = file.name;
+  alterImagePreview.classList.remove("hidden");
+  alterImagePreviewFiles.classList.remove("hidden");
 }
 
 function syncAlterFrom(source) {
@@ -71,10 +139,13 @@ function syncAlterFrom(source) {
     overrideMessage.value = text;
   }
 
-  if (enabled) {
-    const focusEl = source === "upload" ? overrideMessage : overrideMessageFiles;
-    focusEl.focus();
+  if (!enabled) {
+    clearSelectedImage();
+    return;
   }
+
+  const focusEl = source === "upload" ? overrideMessage : overrideMessageFiles;
+  focusEl.focus();
 }
 
 alterMessage.addEventListener("change", () => syncAlterFrom("upload"));
@@ -85,6 +156,14 @@ overrideMessage.addEventListener("input", () => {
 overrideMessageFiles.addEventListener("input", () => {
   overrideMessage.value = overrideMessageFiles.value;
 });
+alterImage.addEventListener("change", () => {
+  setSelectedImage(alterImage.files[0]);
+});
+alterImageFiles.addEventListener("change", () => {
+  setSelectedImage(alterImageFiles.files[0]);
+});
+alterImageClear.addEventListener("click", clearSelectedImage);
+alterImageClearFiles.addEventListener("click", clearSelectedImage);
 
 const STATUS_LABELS = {
   initializing: "Connecting…",
@@ -214,8 +293,7 @@ async function sendFromFile(file) {
   try {
     const res = await fetch("/api/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getSendPayload({ fileId: file.id })),
+      ...buildSendBody({ fileId: file.id }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Send failed");
@@ -303,8 +381,7 @@ sendBtn.addEventListener("click", async () => {
   try {
     const res = await fetch("/api/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getSendPayload()),
+      ...buildSendBody(),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Send failed");

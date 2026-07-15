@@ -7,14 +7,18 @@ const cors = require("cors");
 const QRCode = require("qrcode");
 const XLSX = require("xlsx");
 const { Server } = require("socket.io");
-const { Client, LocalAuth } = require("whatsapp-web.js");
+const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 
 const PORT = process.env.PORT || 80;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const MEDIA_DIR = path.join(UPLOAD_DIR, "media");
 const MANIFEST_PATH = path.join(UPLOAD_DIR, "files.json");
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+if (!fs.existsSync(MEDIA_DIR)) {
+  fs.mkdirSync(MEDIA_DIR, { recursive: true });
 }
 
 // Library of previously uploaded Excel files, persisted alongside the
@@ -59,6 +63,31 @@ const upload = multer({
   },
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: MEDIA_DIR,
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    },
+  }),
+  fileFilter: (_req, file, cb) => {
+    const ok =
+      file.mimetype.startsWith("image/") ||
+      /\.(jpe?g|png|gif|webp|bmp)$/i.test(file.originalname);
+    cb(ok ? null : new Error("Only image files are allowed"), ok);
+  },
+  limits: { fileSize: 16 * 1024 * 1024 },
+});
+
+function parseSendUpload(req, res, next) {
+  const contentType = req.headers["content-type"] || "";
+  if (contentType.includes("multipart/form-data")) {
+    return imageUpload.single("image")(req, res, next);
+  }
+  next();
+}
 
 const state = {
   status: "initializing",
@@ -265,7 +294,7 @@ app.delete("/api/files/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/send", async (req, res) => {
+app.post("/api/send", parseSendUpload, async (req, res) => {
   if (!state.ready) {
     return res.status(400).json({ error: "WhatsApp is not ready yet" });
   }
@@ -275,59 +304,95 @@ app.post("/api/send", async (req, res) => {
 
   const body = req.body || {};
   const fileId = body.fileId;
+  const alterEnabled =
+    body.alterMessage === true ||
+    body.alterMessage === "true" ||
+    body.alterMessage === "1";
   const overrideMessage =
     typeof body.overrideMessage === "string" ? body.overrideMessage.trim() : "";
+  const mediaPath = req.file ? req.file.path : null;
 
   if (fileId) {
     const file = uploadedFiles.find((f) => f.id === fileId);
     if (!file) {
+      if (mediaPath) fs.rmSync(mediaPath, { force: true });
       return res.status(404).json({ error: "File not found" });
     }
     try {
       loadExcel(path.join(UPLOAD_DIR, file.storedName), file.originalName);
     } catch (err) {
+      if (mediaPath) fs.rmSync(mediaPath, { force: true });
       return res.status(400).json({ error: `Could not read file: ${err.message}` });
     }
   }
 
   if (!state.rows.length) {
+    if (mediaPath) fs.rmSync(mediaPath, { force: true });
     return res.status(400).json({ error: "Upload an Excel file first" });
   }
 
-  if (body.alterMessage && !overrideMessage) {
-    return res.status(400).json({ error: "Write the new message before sending" });
+  if (alterEnabled && !overrideMessage && !mediaPath) {
+    return res
+      .status(400)
+      .json({ error: "Write a message or upload a picture before sending" });
+  }
+
+  let media = null;
+  if (mediaPath) {
+    try {
+      media = MessageMedia.fromFilePath(mediaPath);
+    } catch (err) {
+      fs.rmSync(mediaPath, { force: true });
+      return res.status(400).json({ error: `Could not read image: ${err.message}` });
+    }
   }
 
   state.sending = true;
   state.progress = { total: state.rows.length, sent: 0, failed: 0 };
-  addLog(
-    overrideMessage
-      ? `Sending custom message to ${state.rows.length} contacts…`
-      : `Sending ${state.rows.length} messages…`,
-    "info"
-  );
+  const modeLabel = media
+    ? overrideMessage
+      ? "image + custom message"
+      : "image"
+    : overrideMessage
+      ? "custom message"
+      : "Excel messages";
+  addLog(`Sending ${modeLabel} to ${state.rows.length} contacts…`, "info");
   emitState();
   res.json({ ok: true, total: state.rows.length });
 
-  for (const row of state.rows) {
-    const chatId = toChatId(row.phone);
-    const message = overrideMessage || String(row.message || "").trim();
-    if (!message) {
-      state.progress.failed += 1;
-      addLog(`Failed ${row.phone}: no message`, "error");
+  try {
+    for (const row of state.rows) {
+      const chatId = toChatId(row.phone);
+      const message = alterEnabled
+        ? overrideMessage
+        : String(row.message || "").trim();
+
+      if (!media && !message) {
+        state.progress.failed += 1;
+        addLog(`Failed ${row.phone}: no message`, "error");
+        emitState();
+        continue;
+      }
+
+      try {
+        if (media) {
+          await client.sendMessage(chatId, media, {
+            caption: message || undefined,
+          });
+        } else {
+          await client.sendMessage(chatId, message);
+        }
+        state.progress.sent += 1;
+        addLog(`Sent to ${row.phone}`, "success");
+      } catch (err) {
+        state.progress.failed += 1;
+        addLog(`Failed ${row.phone}: ${err.message}`, "error");
+      }
       emitState();
-      continue;
+      await new Promise((r) => setTimeout(r, 3000));
     }
-    try {
-      await client.sendMessage(chatId, message);
-      state.progress.sent += 1;
-      addLog(`Sent to ${row.phone}`, "success");
-    } catch (err) {
-      state.progress.failed += 1;
-      addLog(`Failed ${row.phone}: ${err.message}`, "error");
-    }
-    emitState();
-    await new Promise((r) => setTimeout(r, 3000));
+  } finally {
+    if (mediaPath) fs.rmSync(mediaPath, { force: true });
   }
 
   state.sending = false;
