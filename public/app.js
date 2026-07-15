@@ -24,6 +24,7 @@ const STATUS_LABELS = {
   ready: "Ready",
   auth_failure: "Auth failed",
   disconnected: "Disconnected",
+  error: "WhatsApp error — retrying",
 };
 
 function applyState(state) {

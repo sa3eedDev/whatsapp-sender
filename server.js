@@ -159,7 +159,27 @@ client.on("disconnected", (reason) => {
   state.qrDataUrl = null;
   addLog(`Disconnected: ${reason}`, "error");
   emitState();
-  client.initialize();
+  initializeClient();
+});
+
+// Keep the web server alive if WhatsApp/Chromium fails to start
+// (an unhandled rejection would otherwise kill the whole process),
+// and retry so transient failures recover on their own.
+function initializeClient(attempt = 1) {
+  client.initialize().catch((err) => {
+    state.status = "error";
+    state.ready = false;
+    addLog(`WhatsApp failed to start (attempt ${attempt}): ${err.message}`, "error");
+    emitState();
+    const delay = Math.min(attempt * 10_000, 60_000);
+    addLog(`Retrying in ${delay / 1000}s…`, "info");
+    setTimeout(() => initializeClient(attempt + 1), delay);
+  });
+}
+
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection:", err);
+  addLog(`Unexpected error: ${err.message || err}`, "error");
 });
 
 app.get("/api/state", (_req, res) => {
@@ -267,9 +287,9 @@ if (fs.existsSync(path.join(__dirname, "whatsapp.xlsx"))) {
   }
 }
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`WhatsApp Sender UI → http://localhost:${PORT}`);
   state.status = "initializing";
   emitState();
-  client.initialize();
+  initializeClient();
 });

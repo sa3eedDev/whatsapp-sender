@@ -1,6 +1,10 @@
 services:
   whatsapp-sender:
     build: .
+    # Coolify's proxy routes to this container port directly; the host port
+    # mapping is only needed when running locally without a reverse proxy.
+    expose:
+      - "3000"
     ports:
       - "3000:3000"
     volumes:
