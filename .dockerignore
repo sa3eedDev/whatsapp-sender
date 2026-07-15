@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.DS_Store
+.wwebjs_auth
+.wwebjs_cache
+uploads
+*.md
+.cursor
+agent-transcripts
