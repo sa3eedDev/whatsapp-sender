@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     NODE_ENV=production \
-    PORT=3000 \
+    PORT=80 \
     WWEBJS_AUTH_PATH=/data/.wwebjs_auth
 
 WORKDIR /app
@@ -24,7 +24,7 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh \
     && mkdir -p /data/.wwebjs_auth /app/uploads
 
-EXPOSE 3000
+EXPOSE 80
 
 VOLUME ["/data", "/app/uploads"]
 

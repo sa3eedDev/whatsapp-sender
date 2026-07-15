@@ -4,16 +4,16 @@ services:
     # Coolify's proxy routes to this container port directly; the host port
     # mapping is only needed when running locally without a reverse proxy.
     expose:
-      - "3000"
+      - "80"
     ports:
-      - "3000:3000"
+      - "80:80"
     volumes:
       - wwebjs_auth:/data/.wwebjs_auth
       - uploads:/app/uploads
     restart: unless-stopped
     shm_size: "256mb"
     environment:
-      - PORT=3000
+      - PORT=80
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
       - WWEBJS_AUTH_PATH=/data/.wwebjs_auth
 

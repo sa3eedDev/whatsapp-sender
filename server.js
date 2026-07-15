@@ -9,7 +9,7 @@ const XLSX = require("xlsx");
 const { Server } = require("socket.io");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 80;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const UPLOAD_PATH = path.join(UPLOAD_DIR, "contacts.xlsx");
 
