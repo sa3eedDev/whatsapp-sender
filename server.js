@@ -159,13 +159,24 @@ function toChatId(phone) {
   return `${digits}@c.us`;
 }
 
+const AUTH_PATH = process.env.WWEBJS_AUTH_PATH || path.join(__dirname, ".wwebjs_auth");
+const QR_TIMEOUT_MS = Number(process.env.QR_TIMEOUT_MS || 45_000);
+
 const puppeteerOptions = {
   headless: true,
+  protocolTimeout: 120_000,
   args: [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    "--disable-extensions",
+    "--no-first-run",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--disable-sync",
+    "--metrics-recording-only",
+    "--mute-audio",
   ],
 };
 
@@ -173,66 +184,186 @@ if (process.env.PUPPETEER_EXECUTABLE_PATH) {
   puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
 }
 
-const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: process.env.WWEBJS_AUTH_PATH || ".wwebjs_auth" }),
-  puppeteer: puppeteerOptions,
-});
+let client = null;
+let qrWatchdog = null;
+let restarting = false;
+let initAttempt = 0;
 
-client.on("qr", async (qr) => {
-  state.status = "qr";
-  state.ready = false;
-  state.qrDataUrl = await QRCode.toDataURL(qr, {
-    width: 280,
-    margin: 2,
-    color: { dark: "#0f172a", light: "#ffffff" },
+function clearChromiumLocks() {
+  if (!fs.existsSync(AUTH_PATH)) return;
+  const walk = (dir) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (
+        entry.name === "SingletonLock" ||
+        entry.name === "SingletonCookie" ||
+        entry.name === "SingletonSocket"
+      ) {
+        fs.rmSync(full, { force: true, recursive: true });
+        continue;
+      }
+      if (entry.isDirectory()) walk(full);
+    }
+  };
+  walk(AUTH_PATH);
+}
+
+function clearQrWatchdog() {
+  if (qrWatchdog) {
+    clearTimeout(qrWatchdog);
+    qrWatchdog = null;
+  }
+}
+
+function armQrWatchdog() {
+  clearQrWatchdog();
+  qrWatchdog = setTimeout(() => {
+    if (state.ready || state.qrDataUrl || state.sending) return;
+    addLog("QR code timed out — restarting WhatsApp…", "error");
+    restartWhatsApp("timeout");
+  }, QR_TIMEOUT_MS);
+}
+
+function bindClientEvents(instance) {
+  instance.on("loading_screen", (percent, message) => {
+    state.status = "initializing";
+    addLog(`Loading WhatsApp… ${percent}% ${message || ""}`.trim(), "info");
+    emitState();
   });
-  addLog("Scan the QR code with WhatsApp", "info");
-  emitState();
-});
 
-client.on("authenticated", () => {
-  state.status = "authenticated";
-  state.qrDataUrl = null;
-  addLog("Authenticated", "success");
-  emitState();
-});
+  instance.on("qr", async (qr) => {
+    clearQrWatchdog();
+    state.status = "qr";
+    state.ready = false;
+    try {
+      state.qrDataUrl = await QRCode.toDataURL(qr, {
+        width: 280,
+        margin: 2,
+        color: { dark: "#0f172a", light: "#ffffff" },
+      });
+    } catch (err) {
+      addLog(`Failed to render QR: ${err.message}`, "error");
+      state.qrDataUrl = null;
+    }
+    addLog("Scan the QR code with WhatsApp", "info");
+    emitState();
+  });
 
-client.on("ready", () => {
-  state.status = "ready";
-  state.ready = true;
-  state.qrDataUrl = null;
-  addLog("WhatsApp is ready", "success");
-  emitState();
-});
+  instance.on("authenticated", () => {
+    clearQrWatchdog();
+    state.status = "authenticated";
+    state.qrDataUrl = null;
+    addLog("Authenticated", "success");
+    emitState();
+  });
 
-client.on("auth_failure", (msg) => {
-  state.status = "auth_failure";
+  instance.on("ready", () => {
+    clearQrWatchdog();
+    initAttempt = 0;
+    state.status = "ready";
+    state.ready = true;
+    state.qrDataUrl = null;
+    addLog("WhatsApp is ready", "success");
+    emitState();
+  });
+
+  instance.on("auth_failure", (msg) => {
+    clearQrWatchdog();
+    state.status = "auth_failure";
+    state.ready = false;
+    addLog(`Auth failed: ${msg}`, "error");
+    emitState();
+    setTimeout(() => restartWhatsApp("auth_failure"), 3_000);
+  });
+
+  instance.on("disconnected", (reason) => {
+    clearQrWatchdog();
+    state.status = "disconnected";
+    state.ready = false;
+    state.qrDataUrl = null;
+    addLog(`Disconnected: ${reason}`, "error");
+    emitState();
+    setTimeout(() => restartWhatsApp("disconnected"), 2_000);
+  });
+}
+
+function createClient() {
+  const instance = new Client({
+    authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
+    puppeteer: puppeteerOptions,
+    authTimeoutMs: 60_000,
+    qrMaxRetries: 5,
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 10_000,
+  });
+  bindClientEvents(instance);
+  return instance;
+}
+
+async function restartWhatsApp(reason = "manual") {
+  if (restarting) return;
+  restarting = true;
+  clearQrWatchdog();
+
+  state.status = "initializing";
   state.ready = false;
-  addLog(`Auth failed: ${msg}`, "error");
-  emitState();
-});
-
-client.on("disconnected", (reason) => {
-  state.status = "disconnected";
-  state.ready = false;
   state.qrDataUrl = null;
-  addLog(`Disconnected: ${reason}`, "error");
+  addLog(`Restarting WhatsApp (${reason})…`, "info");
   emitState();
+
+  try {
+    if (client) {
+      try {
+        await client.destroy();
+      } catch (_) {
+        /* ignore destroy errors */
+      }
+      client = null;
+    }
+  } finally {
+    clearChromiumLocks();
+    restarting = false;
+  }
+
   initializeClient();
-});
+}
 
-// Keep the web server alive if WhatsApp/Chromium fails to start
-// (an unhandled rejection would otherwise kill the whole process),
-// and retry so transient failures recover on their own.
-function initializeClient(attempt = 1) {
+function initializeClient() {
+  initAttempt += 1;
+  clearChromiumLocks();
+
+  if (!client) {
+    client = createClient();
+  }
+
+  state.status = "initializing";
+  state.ready = false;
+  state.qrDataUrl = null;
+  emitState();
+  armQrWatchdog();
+
   client.initialize().catch((err) => {
+    clearQrWatchdog();
     state.status = "error";
     state.ready = false;
-    addLog(`WhatsApp failed to start (attempt ${attempt}): ${err.message}`, "error");
+    addLog(
+      `WhatsApp failed to start (attempt ${initAttempt}): ${err.message}`,
+      "error"
+    );
     emitState();
-    const delay = Math.min(attempt * 10_000, 60_000);
-    addLog(`Retrying in ${delay / 1000}s…`, "info");
-    setTimeout(() => initializeClient(attempt + 1), delay);
+
+    const delay = Math.min(initAttempt * 8_000, 60_000);
+    addLog(`Retrying in ${Math.round(delay / 1000)}s…`, "info");
+    setTimeout(() => {
+      client = null;
+      restartWhatsApp("init_error");
+    }, delay);
   });
 }
 
@@ -243,6 +374,14 @@ process.on("unhandledRejection", (err) => {
 
 app.get("/api/state", (_req, res) => {
   res.json(snapshot());
+});
+
+app.post("/api/whatsapp/restart", async (_req, res) => {
+  if (state.sending) {
+    return res.status(400).json({ error: "Cannot restart while sending messages" });
+  }
+  res.json({ ok: true });
+  restartWhatsApp("manual");
 });
 
 app.post("/api/upload", upload.single("file"), (req, res) => {

@@ -186,6 +186,29 @@ h2 {
   padding: 1rem;
 }
 
+.qr-placeholder p {
+  margin: 0;
+}
+
+.qr-refresh,
+.qr-refresh-below {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  margin-top: 0.25rem;
+}
+
+.qr-refresh:hover,
+.qr-refresh-below:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.qr-refresh-below {
+  width: 100%;
+  margin-top: 0.85rem;
+}
+
 .ready-badge {
   color: var(--accent);
 }

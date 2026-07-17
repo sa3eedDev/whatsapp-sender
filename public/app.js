@@ -5,6 +5,9 @@ const statusText = document.getElementById("statusText");
 const qrPlaceholder = document.getElementById("qrPlaceholder");
 const qrImage = document.getElementById("qrImage");
 const readyBadge = document.getElementById("readyBadge");
+const qrWaitText = document.getElementById("qrWaitText");
+const qrRefreshBtn = document.getElementById("qrRefreshBtn");
+const qrRefreshReady = document.getElementById("qrRefreshReady");
 const fileInput = document.getElementById("fileInput");
 const dropzone = document.getElementById("dropzone");
 const dropLabel = document.getElementById("dropLabel");
@@ -185,14 +188,22 @@ function applyState(state) {
     qrImage.classList.remove("hidden");
     qrPlaceholder.classList.add("hidden");
     readyBadge.classList.add("hidden");
+    qrRefreshReady.classList.remove("hidden");
   } else if (state.ready) {
     qrImage.classList.add("hidden");
     qrPlaceholder.classList.add("hidden");
     readyBadge.classList.remove("hidden");
+    qrRefreshReady.classList.remove("hidden");
   } else {
     qrImage.classList.add("hidden");
     readyBadge.classList.add("hidden");
     qrPlaceholder.classList.remove("hidden");
+    qrRefreshReady.classList.add("hidden");
+    if (status === "error" || status === "auth_failure" || status === "disconnected") {
+      qrWaitText.textContent = "Connection issue — tap refresh to retry";
+    } else {
+      qrWaitText.textContent = "Waiting for QR…";
+    }
   }
 
   if (state.fileName) {
@@ -392,6 +403,25 @@ sendBtn.addEventListener("click", async () => {
     sendBtn.textContent = "Send messages";
   }
 });
+
+async function restartWhatsApp() {
+  qrWaitText.textContent = "Restarting WhatsApp…";
+  qrRefreshBtn.disabled = true;
+  qrRefreshReady.disabled = true;
+  try {
+    const res = await fetch("/api/whatsapp/restart", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Restart failed");
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    qrRefreshBtn.disabled = false;
+    qrRefreshReady.disabled = false;
+  }
+}
+
+qrRefreshBtn.addEventListener("click", restartWhatsApp);
+qrRefreshReady.addEventListener("click", restartWhatsApp);
 
 clearLogsBtn.addEventListener("click", () => {
   logList.innerHTML = "";

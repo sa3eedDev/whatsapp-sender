@@ -33,7 +33,10 @@
           <div class="qr-frame" id="qrFrame">
             <div class="qr-placeholder" id="qrPlaceholder">
               <div class="spinner"></div>
-              <p>Waiting for QR…</p>
+              <p id="qrWaitText">Waiting for QR…</p>
+              <button type="button" class="btn ghost qr-refresh" id="qrRefreshBtn">
+                Refresh WhatsApp
+              </button>
             </div>
             <img id="qrImage" class="qr-image hidden" alt="WhatsApp QR code" />
             <div class="ready-badge hidden" id="readyBadge">
@@ -50,6 +53,9 @@
               <p>Connected</p>
             </div>
           </div>
+          <button type="button" class="btn ghost qr-refresh-below hidden" id="qrRefreshReady">
+            Reconnect WhatsApp
+          </button>
         </article>
 
         <article class="panel upload-panel">
