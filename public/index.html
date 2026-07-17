@@ -110,26 +110,29 @@
               placeholder="This message will be sent to every recipient instead of the Excel message"
             ></textarea>
 
-            <div class="alter-image">
-              <label class="alter-image-pick" for="alterImage">
+            <div class="alter-media">
+              <label class="alter-media-pick" for="alterMedia">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
                   <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6" />
                   <circle cx="8.5" cy="10" r="1.5" fill="currentColor" />
                   <path d="M21 16l-5.5-5.5L7 19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>Add picture</span>
+                <span>Add photo or video</span>
               </label>
+              <p class="muted alter-media-hint">Photos or videos · videos under 100 MB</p>
               <input
                 type="file"
-                id="alterImage"
-                accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+                id="alterMedia"
+                accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/3gpp,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.mov,.avi,.mkv,.webm,.3gp,.m4v"
                 hidden
               />
-              <div class="alter-image-preview hidden" id="alterImagePreview">
-                <img id="alterImageThumb" alt="Selected picture preview" />
-                <div class="alter-image-meta">
-                  <span id="alterImageName" class="file-name">picture</span>
-                  <button type="button" class="btn ghost" id="alterImageClear">
+              <div class="alter-media-preview hidden" id="alterMediaPreview">
+                <img id="alterMediaThumb" class="hidden" alt="Selected photo preview" />
+                <video id="alterMediaVideo" class="hidden" controls muted playsinline></video>
+                <div class="alter-media-meta">
+                  <span id="alterMediaName" class="file-name">media</span>
+                  <span id="alterMediaSize" class="muted file-sub"></span>
+                  <button type="button" class="btn ghost" id="alterMediaClear">
                     Remove
                   </button>
                 </div>
@@ -167,26 +170,29 @@
             placeholder="This message will be sent to every recipient instead of the Excel message"
           ></textarea>
 
-          <div class="alter-image">
-            <label class="alter-image-pick" for="alterImageFiles">
+          <div class="alter-media">
+            <label class="alter-media-pick" for="alterMediaFiles">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
                 <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6" />
                 <circle cx="8.5" cy="10" r="1.5" fill="currentColor" />
                 <path d="M21 16l-5.5-5.5L7 19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <span>Add picture</span>
+              <span>Add photo or video</span>
             </label>
+            <p class="muted alter-media-hint">Photos or videos · videos under 100 MB</p>
             <input
               type="file"
-              id="alterImageFiles"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.jpg,.jpeg,.png,.gif,.webp,.bmp"
+              id="alterMediaFiles"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/3gpp,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.mov,.avi,.mkv,.webm,.3gp,.m4v"
               hidden
             />
-            <div class="alter-image-preview hidden" id="alterImagePreviewFiles">
-              <img id="alterImageThumbFiles" alt="Selected picture preview" />
-              <div class="alter-image-meta">
-                <span id="alterImageNameFiles" class="file-name">picture</span>
-                <button type="button" class="btn ghost" id="alterImageClearFiles">
+            <div class="alter-media-preview hidden" id="alterMediaPreviewFiles">
+              <img id="alterMediaThumbFiles" class="hidden" alt="Selected photo preview" />
+              <video id="alterMediaVideoFiles" class="hidden" controls muted playsinline></video>
+              <div class="alter-media-meta">
+                <span id="alterMediaNameFiles" class="file-name">media</span>
+                <span id="alterMediaSizeFiles" class="muted file-sub"></span>
+                <button type="button" class="btn ghost" id="alterMediaClearFiles">
                   Remove
                 </button>
               </div>

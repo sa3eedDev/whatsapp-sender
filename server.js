@@ -78,29 +78,72 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-const imageUpload = multer({
+const IMAGE_MAX_BYTES = 16 * 1024 * 1024;
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp)$/i;
+const VIDEO_EXT = /\.(mp4|mov|avi|mkv|webm|3gp|m4v)$/i;
+
+function isImageFile(file) {
+  return (
+    (file.mimetype && file.mimetype.startsWith("image/")) ||
+    IMAGE_EXT.test(file.originalname || "")
+  );
+}
+
+function isVideoFile(file) {
+  return (
+    (file.mimetype && file.mimetype.startsWith("video/")) ||
+    VIDEO_EXT.test(file.originalname || "")
+  );
+}
+
+const mediaUpload = multer({
   storage: multer.diskStorage({
     destination: MEDIA_DIR,
     filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+      const ext = path.extname(file.originalname).toLowerCase() || ".bin";
       cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
     },
   }),
   fileFilter: (_req, file, cb) => {
-    const ok =
-      file.mimetype.startsWith("image/") ||
-      /\.(jpe?g|png|gif|webp|bmp)$/i.test(file.originalname);
-    cb(ok ? null : new Error("Only image files are allowed"), ok);
+    if (isImageFile(file) || isVideoFile(file)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error("Only photo or video files are allowed"));
   },
-  limits: { fileSize: 16 * 1024 * 1024 },
+  limits: { fileSize: VIDEO_MAX_BYTES },
 });
 
 function parseSendUpload(req, res, next) {
   const contentType = req.headers["content-type"] || "";
-  if (contentType.includes("multipart/form-data")) {
-    return imageUpload.single("image")(req, res, next);
+  if (!contentType.includes("multipart/form-data")) {
+    next();
+    return;
   }
-  next();
+
+  mediaUpload.single("media")(req, res, (err) => {
+    if (err) {
+      const message =
+        err.code === "LIMIT_FILE_SIZE"
+          ? "Video must be less than 100 MB"
+          : err.message || "Media upload failed";
+      return res.status(400).json({ error: message });
+    }
+
+    if (req.file) {
+      if (isImageFile(req.file) && req.file.size > IMAGE_MAX_BYTES) {
+        fs.rmSync(req.file.path, { force: true });
+        return res.status(400).json({ error: "Photo must be less than 16 MB" });
+      }
+      if (isVideoFile(req.file) && req.file.size > VIDEO_MAX_BYTES) {
+        fs.rmSync(req.file.path, { force: true });
+        return res.status(400).json({ error: "Video must be less than 100 MB" });
+      }
+    }
+    next();
+  });
 }
 
 const state = {
@@ -485,16 +528,18 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
   if (alterEnabled && !overrideMessage && !mediaPath) {
     return res
       .status(400)
-      .json({ error: "Write a message or upload a picture before sending" });
+      .json({ error: "Write a message or upload a photo/video before sending" });
   }
 
   let media = null;
+  let mediaKind = null;
   if (mediaPath) {
     try {
       media = MessageMedia.fromFilePath(mediaPath);
+      mediaKind = isVideoFile(req.file) ? "video" : "image";
     } catch (err) {
       fs.rmSync(mediaPath, { force: true });
-      return res.status(400).json({ error: `Could not read image: ${err.message}` });
+      return res.status(400).json({ error: `Could not read media: ${err.message}` });
     }
   }
 
@@ -502,8 +547,8 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
   state.progress = { total: state.rows.length, sent: 0, failed: 0 };
   const modeLabel = media
     ? overrideMessage
-      ? "image + custom message"
-      : "image"
+      ? `${mediaKind} + custom message`
+      : mediaKind
     : overrideMessage
       ? "custom message"
       : "Excel messages";
@@ -529,6 +574,7 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
         if (media) {
           await client.sendMessage(chatId, media, {
             caption: message || undefined,
+            sendMediaAsDocument: false,
           });
         } else {
           await client.sendMessage(chatId, message);

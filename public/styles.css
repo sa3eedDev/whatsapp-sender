@@ -351,11 +351,11 @@ h2 {
   color: rgba(138, 163, 150, 0.7);
 }
 
-.alter-image {
+.alter-media {
   margin-top: 0.75rem;
 }
 
-.alter-image-pick {
+.alter-media-pick {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -373,17 +373,22 @@ h2 {
   transition: background 0.15s, border-color 0.15s, transform 0.12s;
 }
 
-.alter-image-pick:hover {
+.alter-media-pick:hover {
   background: rgba(37, 211, 102, 0.2);
   border-color: #3be07a;
   color: #3be07a;
 }
 
-.alter-image-pick:active {
+.alter-media-pick:active {
   transform: translateY(1px);
 }
 
-.alter-image-preview {
+.alter-media-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+}
+
+.alter-media-preview {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -394,26 +399,27 @@ h2 {
   background: rgba(0, 0, 0, 0.2);
 }
 
-.alter-image-preview img {
-  width: 56px;
-  height: 56px;
+.alter-media-preview img,
+.alter-media-preview video {
+  width: 96px;
+  height: 72px;
   object-fit: cover;
   border-radius: 8px;
   background: #000;
   flex-shrink: 0;
 }
 
-.alter-image-meta {
+.alter-media-meta {
   display: grid;
   gap: 0.15rem;
   min-width: 0;
 }
 
-.alter-image-meta .file-name {
+.alter-media-meta .file-name {
   font-size: 0.86rem;
 }
 
-.alter-image-meta .btn.ghost {
+.alter-media-meta .btn.ghost {
   justify-self: start;
   padding: 0;
 }
