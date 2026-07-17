@@ -11,7 +11,7 @@
   --danger: #f07178;
   --warn: #e6c07b;
   --radius: 18px;
-  --font: "DM Sans", system-ui, sans-serif;
+  --font: "DM Sans", "IBM Plex Sans Arabic", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
@@ -33,6 +33,17 @@ body {
   background: var(--bg);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Auto-detect RTL for Arabic text in mixed English/Arabic content */
+.arabic-text,
+.alter-box textarea,
+.log-list .msg,
+.file-name,
+.hint code {
+  direction: auto;
+  unicode-bidi: plaintext;
 }
 
 .bg-grid {

@@ -26,9 +26,9 @@ if (!fs.existsSync(MEDIA_DIR)) {
 let uploadedFiles = [];
 try {
   if (fs.existsSync(MANIFEST_PATH)) {
-    uploadedFiles = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")).filter(
-      (f) => fs.existsSync(path.join(UPLOAD_DIR, f.storedName))
-    );
+    uploadedFiles = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"))
+      .filter((f) => fs.existsSync(path.join(UPLOAD_DIR, f.storedName)))
+      .map((f) => ({ ...f, originalName: decodeOriginalName(f.originalName) }));
   }
 } catch (_) {
   uploadedFiles = [];
@@ -36,6 +36,20 @@ try {
 
 function saveManifest() {
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(uploadedFiles, null, 2));
+}
+
+// Multer decodes multipart filenames as latin1, which mangles UTF-8 names
+// (e.g. Arabic shows up as "Ø¬Ù..."). Re-decode the raw bytes as UTF-8.
+function decodeOriginalName(name) {
+  if (!name) return name;
+  try {
+    const decoded = Buffer.from(name, "latin1").toString("utf8");
+    // Only use the re-decoded value if it round-trips cleanly (no lost bytes).
+    if (!decoded.includes("\uFFFD")) return decoded;
+  } catch (_) {
+    /* fall through to original */
+  }
+  return name;
 }
 
 const app = express();
@@ -390,21 +404,19 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const rows = loadExcel(req.file.path, req.file.originalname);
+    const originalName = decodeOriginalName(req.file.originalname);
+    const rows = loadExcel(req.file.path, originalName);
 
     uploadedFiles.unshift({
       id: path.parse(req.file.filename).name,
-      originalName: req.file.originalname,
+      originalName,
       storedName: req.file.filename,
       rowCount: rows.length,
       uploadedAt: new Date().toISOString(),
     });
     saveManifest();
 
-    addLog(
-      `Loaded ${rows.length} contacts from ${req.file.originalname}`,
-      "success"
-    );
+    addLog(`Loaded ${rows.length} contacts from ${originalName}`, "success");
     emitState();
 
     res.json({
