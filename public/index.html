@@ -117,26 +117,19 @@
                   <circle cx="8.5" cy="10" r="1.5" fill="currentColor" />
                   <path d="M21 16l-5.5-5.5L7 19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>Add photo or video</span>
+                <span>Add photos or videos</span>
               </label>
-              <p class="muted alter-media-hint">Photos or videos · videos under 100 MB</p>
+              <p class="muted alter-media-hint">
+                Add multiple files · videos under 100 MB · up to 10
+              </p>
               <input
                 type="file"
                 id="alterMedia"
                 accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/3gpp,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.mov,.avi,.mkv,.webm,.3gp,.m4v"
+                multiple
                 hidden
               />
-              <div class="alter-media-preview hidden" id="alterMediaPreview">
-                <img id="alterMediaThumb" class="hidden" alt="Selected photo preview" />
-                <video id="alterMediaVideo" class="hidden" controls muted playsinline></video>
-                <div class="alter-media-meta">
-                  <span id="alterMediaName" class="file-name">media</span>
-                  <span id="alterMediaSize" class="muted file-sub"></span>
-                  <button type="button" class="btn ghost" id="alterMediaClear">
-                    Remove
-                  </button>
-                </div>
-              </div>
+              <ul class="alter-media-list" id="alterMediaList"></ul>
             </div>
           </div>
 
@@ -177,26 +170,19 @@
                 <circle cx="8.5" cy="10" r="1.5" fill="currentColor" />
                 <path d="M21 16l-5.5-5.5L7 19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <span>Add photo or video</span>
+              <span>Add photos or videos</span>
             </label>
-            <p class="muted alter-media-hint">Photos or videos · videos under 100 MB</p>
+            <p class="muted alter-media-hint">
+              Add multiple files · videos under 100 MB · up to 10
+            </p>
             <input
               type="file"
               id="alterMediaFiles"
               accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/3gpp,.jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.mov,.avi,.mkv,.webm,.3gp,.m4v"
+              multiple
               hidden
             />
-            <div class="alter-media-preview hidden" id="alterMediaPreviewFiles">
-              <img id="alterMediaThumbFiles" class="hidden" alt="Selected photo preview" />
-              <video id="alterMediaVideoFiles" class="hidden" controls muted playsinline></video>
-              <div class="alter-media-meta">
-                <span id="alterMediaNameFiles" class="file-name">media</span>
-                <span id="alterMediaSizeFiles" class="muted file-sub"></span>
-                <button type="button" class="btn ghost" id="alterMediaClearFiles">
-                  Remove
-                </button>
-              </div>
-            </div>
+            <ul class="alter-media-list" id="alterMediaListFiles"></ul>
           </div>
         </div>
 

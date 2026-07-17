@@ -113,8 +113,14 @@ const mediaUpload = multer({
     }
     cb(new Error("Only photo or video files are allowed"));
   },
-  limits: { fileSize: VIDEO_MAX_BYTES },
+  limits: { fileSize: VIDEO_MAX_BYTES, files: 10 },
 });
+
+function cleanupMediaFiles(files) {
+  for (const file of files || []) {
+    fs.rmSync(file.path, { force: true });
+  }
+}
 
 function parseSendUpload(req, res, next) {
   const contentType = req.headers["content-type"] || "";
@@ -123,23 +129,26 @@ function parseSendUpload(req, res, next) {
     return;
   }
 
-  mediaUpload.single("media")(req, res, (err) => {
+  mediaUpload.array("media", 10)(req, res, (err) => {
     if (err) {
       const message =
         err.code === "LIMIT_FILE_SIZE"
-          ? "Video must be less than 100 MB"
-          : err.message || "Media upload failed";
+          ? "Each video must be less than 100 MB"
+          : err.code === "LIMIT_FILE_COUNT"
+            ? "You can attach up to 10 photos/videos"
+            : err.message || "Media upload failed";
       return res.status(400).json({ error: message });
     }
 
-    if (req.file) {
-      if (isImageFile(req.file) && req.file.size > IMAGE_MAX_BYTES) {
-        fs.rmSync(req.file.path, { force: true });
-        return res.status(400).json({ error: "Photo must be less than 16 MB" });
+    const files = req.files || [];
+    for (const file of files) {
+      if (isImageFile(file) && file.size > IMAGE_MAX_BYTES) {
+        cleanupMediaFiles(files);
+        return res.status(400).json({ error: "Each photo must be less than 16 MB" });
       }
-      if (isVideoFile(req.file) && req.file.size > VIDEO_MAX_BYTES) {
-        fs.rmSync(req.file.path, { force: true });
-        return res.status(400).json({ error: "Video must be less than 100 MB" });
+      if (isVideoFile(file) && file.size > VIDEO_MAX_BYTES) {
+        cleanupMediaFiles(files);
+        return res.status(400).json({ error: "Each video must be less than 100 MB" });
       }
     }
     next();
@@ -504,51 +513,56 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
     body.alterMessage === "1";
   const overrideMessage =
     typeof body.overrideMessage === "string" ? body.overrideMessage.trim() : "";
-  const mediaPath = req.file ? req.file.path : null;
+  const mediaFiles = req.files || [];
 
   if (fileId) {
     const file = uploadedFiles.find((f) => f.id === fileId);
     if (!file) {
-      if (mediaPath) fs.rmSync(mediaPath, { force: true });
+      cleanupMediaFiles(mediaFiles);
       return res.status(404).json({ error: "File not found" });
     }
     try {
       loadExcel(path.join(UPLOAD_DIR, file.storedName), file.originalName);
     } catch (err) {
-      if (mediaPath) fs.rmSync(mediaPath, { force: true });
+      cleanupMediaFiles(mediaFiles);
       return res.status(400).json({ error: `Could not read file: ${err.message}` });
     }
   }
 
   if (!state.rows.length) {
-    if (mediaPath) fs.rmSync(mediaPath, { force: true });
+    cleanupMediaFiles(mediaFiles);
     return res.status(400).json({ error: "Upload an Excel file first" });
   }
 
-  if (alterEnabled && !overrideMessage && !mediaPath) {
+  if (alterEnabled && !overrideMessage && !mediaFiles.length) {
     return res
       .status(400)
       .json({ error: "Write a message or upload a photo/video before sending" });
   }
 
-  let media = null;
-  let mediaKind = null;
-  if (mediaPath) {
+  let mediaItems = [];
+  if (mediaFiles.length) {
     try {
-      media = MessageMedia.fromFilePath(mediaPath);
-      mediaKind = isVideoFile(req.file) ? "video" : "image";
+      mediaItems = mediaFiles.map((file) => ({
+        media: MessageMedia.fromFilePath(file.path),
+        kind: isVideoFile(file) ? "video" : "image",
+        path: file.path,
+      }));
     } catch (err) {
-      fs.rmSync(mediaPath, { force: true });
+      cleanupMediaFiles(mediaFiles);
       return res.status(400).json({ error: `Could not read media: ${err.message}` });
     }
   }
 
   state.sending = true;
   state.progress = { total: state.rows.length, sent: 0, failed: 0 };
-  const modeLabel = media
+  const mediaLabel = mediaItems.length
+    ? `${mediaItems.length} media file${mediaItems.length > 1 ? "s" : ""}`
+    : null;
+  const modeLabel = mediaLabel
     ? overrideMessage
-      ? `${mediaKind} + custom message`
-      : mediaKind
+      ? `${mediaLabel} + custom message`
+      : mediaLabel
     : overrideMessage
       ? "custom message"
       : "Excel messages";
@@ -563,7 +577,7 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
         ? overrideMessage
         : String(row.message || "").trim();
 
-      if (!media && !message) {
+      if (!mediaItems.length && !message) {
         state.progress.failed += 1;
         addLog(`Failed ${row.phone}: no message`, "error");
         emitState();
@@ -571,11 +585,17 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
       }
 
       try {
-        if (media) {
-          await client.sendMessage(chatId, media, {
-            caption: message || undefined,
-            sendMediaAsDocument: false,
-          });
+        if (mediaItems.length) {
+          for (let i = 0; i < mediaItems.length; i++) {
+            const item = mediaItems[i];
+            await client.sendMessage(chatId, item.media, {
+              caption: i === 0 && message ? message : undefined,
+              sendMediaAsDocument: false,
+            });
+            if (i < mediaItems.length - 1) {
+              await new Promise((r) => setTimeout(r, 800));
+            }
+          }
         } else {
           await client.sendMessage(chatId, message);
         }
@@ -589,7 +609,7 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
       await new Promise((r) => setTimeout(r, 3000));
     }
   } finally {
-    if (mediaPath) fs.rmSync(mediaPath, { force: true });
+    cleanupMediaFiles(mediaFiles);
   }
 
   state.sending = false;

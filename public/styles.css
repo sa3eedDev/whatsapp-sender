@@ -388,19 +388,26 @@ h2 {
   font-size: 0.78rem;
 }
 
-.alter-media-preview {
+.alter-media-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.alter-media-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 0.75rem;
   padding: 0.55rem;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.2);
 }
 
-.alter-media-preview img,
-.alter-media-preview video {
+.alter-media-item img,
+.alter-media-item video {
   width: 96px;
   height: 72px;
   object-fit: cover;
@@ -413,6 +420,7 @@ h2 {
   display: grid;
   gap: 0.15rem;
   min-width: 0;
+  flex: 1;
 }
 
 .alter-media-meta .file-name {

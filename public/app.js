@@ -29,24 +29,15 @@ const alterBoxFiles = document.getElementById("alterBoxFiles");
 const overrideMessageFiles = document.getElementById("overrideMessageFiles");
 const alterMedia = document.getElementById("alterMedia");
 const alterMediaFiles = document.getElementById("alterMediaFiles");
-const alterMediaPreview = document.getElementById("alterMediaPreview");
-const alterMediaPreviewFiles = document.getElementById("alterMediaPreviewFiles");
-const alterMediaThumb = document.getElementById("alterMediaThumb");
-const alterMediaThumbFiles = document.getElementById("alterMediaThumbFiles");
-const alterMediaVideo = document.getElementById("alterMediaVideo");
-const alterMediaVideoFiles = document.getElementById("alterMediaVideoFiles");
-const alterMediaName = document.getElementById("alterMediaName");
-const alterMediaNameFiles = document.getElementById("alterMediaNameFiles");
-const alterMediaSize = document.getElementById("alterMediaSize");
-const alterMediaSizeFiles = document.getElementById("alterMediaSizeFiles");
-const alterMediaClear = document.getElementById("alterMediaClear");
-const alterMediaClearFiles = document.getElementById("alterMediaClearFiles");
+const alterMediaList = document.getElementById("alterMediaList");
+const alterMediaListFiles = document.getElementById("alterMediaListFiles");
 
 const IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+const MAX_MEDIA_FILES = 10;
 
-let selectedMediaFile = null;
-let selectedMediaUrl = null;
+let selectedMediaItems = [];
+let mediaIdCounter = 0;
 
 function isAlterEnabled() {
   return alterMessage.checked || alterMessageFiles.checked;
@@ -82,7 +73,7 @@ function isVideoMedia(file) {
 
 function buildSendBody(extra = {}) {
   const payload = getSendPayload(extra);
-  if (!payload.alterMessage && !selectedMediaFile) {
+  if (!payload.alterMessage && !selectedMediaItems.length) {
     return {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -93,7 +84,7 @@ function buildSendBody(extra = {}) {
   Object.entries(payload).forEach(([key, value]) => {
     if (value !== undefined && value !== null) form.append(key, String(value));
   });
-  if (selectedMediaFile) form.append("media", selectedMediaFile);
+  selectedMediaItems.forEach((item) => form.append("media", item.file));
   return { body: form };
 }
 
@@ -108,7 +99,7 @@ function getSendPayload(extra = {}) {
 
 function validateOverride() {
   if (!isAlterEnabled()) return true;
-  if (!getOverrideText() && !selectedMediaFile) {
+  if (!getOverrideText() && !selectedMediaItems.length) {
     alert("Write a message or upload a photo/video before sending");
     const focusEl = alterMessage.checked ? overrideMessage : overrideMessageFiles;
     focusEl.focus();
@@ -118,84 +109,110 @@ function validateOverride() {
 }
 
 function clearSelectedMedia() {
-  selectedMediaFile = null;
-  if (selectedMediaUrl) {
-    URL.revokeObjectURL(selectedMediaUrl);
-    selectedMediaUrl = null;
-  }
+  selectedMediaItems.forEach((item) => URL.revokeObjectURL(item.url));
+  selectedMediaItems = [];
   alterMedia.value = "";
   alterMediaFiles.value = "";
-  alterMediaPreview.classList.add("hidden");
-  alterMediaPreviewFiles.classList.add("hidden");
-  alterMediaThumb.classList.add("hidden");
-  alterMediaThumbFiles.classList.add("hidden");
-  alterMediaVideo.classList.add("hidden");
-  alterMediaVideoFiles.classList.add("hidden");
-  alterMediaThumb.removeAttribute("src");
-  alterMediaThumbFiles.removeAttribute("src");
-  alterMediaVideo.removeAttribute("src");
-  alterMediaVideoFiles.removeAttribute("src");
-  alterMediaName.textContent = "media";
-  alterMediaNameFiles.textContent = "media";
-  alterMediaSize.textContent = "";
-  alterMediaSizeFiles.textContent = "";
+  renderMediaLists();
 }
 
-function setSelectedMedia(file) {
-  if (!file) {
-    clearSelectedMedia();
-    return;
-  }
+function removeMediaItem(id) {
+  const idx = selectedMediaItems.findIndex((item) => item.id === id);
+  if (idx === -1) return;
+  URL.revokeObjectURL(selectedMediaItems[idx].url);
+  selectedMediaItems.splice(idx, 1);
+  renderMediaLists();
+}
 
-  const isImage = isImageMedia(file);
-  const isVideo = isVideoMedia(file);
+function createMediaListItem(item) {
+  const li = document.createElement("li");
+  li.className = "alter-media-item";
 
-  if (!isImage && !isVideo) {
-    alert("Only photo or video files are allowed");
-    clearSelectedMedia();
-    return;
-  }
-
-  if (isVideo && file.size > VIDEO_MAX_BYTES) {
-    alert("Video must be less than 100 MB");
-    clearSelectedMedia();
-    return;
-  }
-
-  if (isImage && file.size > IMAGE_MAX_BYTES) {
-    alert("Photo must be less than 16 MB");
-    clearSelectedMedia();
-    return;
-  }
-
-  selectedMediaFile = file;
-  if (selectedMediaUrl) URL.revokeObjectURL(selectedMediaUrl);
-  selectedMediaUrl = URL.createObjectURL(file);
-
-  const sizeLabel = `${isVideo ? "Video" : "Photo"} · ${formatBytes(file.size)}`;
-  alterMediaName.textContent = file.name;
-  alterMediaNameFiles.textContent = file.name;
-  alterMediaSize.textContent = sizeLabel;
-  alterMediaSizeFiles.textContent = sizeLabel;
-
-  if (isVideo) {
-    alterMediaThumb.classList.add("hidden");
-    alterMediaThumbFiles.classList.add("hidden");
-    alterMediaVideo.classList.remove("hidden");
-    alterMediaVideoFiles.classList.remove("hidden");
-    alterMediaVideo.src = selectedMediaUrl;
-    alterMediaVideoFiles.src = selectedMediaUrl;
+  if (item.kind === "video") {
+    const video = document.createElement("video");
+    video.src = item.url;
+    video.controls = true;
+    video.muted = true;
+    video.playsInline = true;
+    li.appendChild(video);
   } else {
-    alterMediaVideo.classList.add("hidden");
-    alterMediaVideoFiles.classList.add("hidden");
-    alterMediaThumb.classList.remove("hidden");
-    alterMediaThumbFiles.classList.remove("hidden");
-    alterMediaThumb.src = selectedMediaUrl;
-    alterMediaThumbFiles.src = selectedMediaUrl;
+    const img = document.createElement("img");
+    img.src = item.url;
+    img.alt = item.file.name;
+    li.appendChild(img);
   }
 
-  alterMediaPreview.classList.remove("hidden");
-  alterMediaPreviewFiles.classList.remove("hidden");
+  const meta = document.createElement("div");
+  meta.className = "alter-media-meta";
+
+  const name = document.createElement("span");
+  name.className = "file-name";
+  name.textContent = item.file.name;
+
+  const size = document.createElement("span");
+  size.className = "muted file-sub";
+  size.textContent = `${item.kind === "video" ? "Video" : "Photo"} · ${formatBytes(item.file.size)}`;
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "btn ghost";
+  removeBtn.textContent = "Remove";
+  removeBtn.addEventListener("click", () => removeMediaItem(item.id));
+
+  meta.append(name, size, removeBtn);
+  li.appendChild(meta);
+  return li;
+}
+
+function renderMediaLists() {
+  alterMediaList.innerHTML = "";
+  alterMediaListFiles.innerHTML = "";
+  selectedMediaItems.forEach((item) => {
+    alterMediaList.appendChild(createMediaListItem(item));
+    alterMediaListFiles.appendChild(createMediaListItem(item));
+  });
+}
+
+function addMediaFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  const errors = [];
+  for (const file of files) {
+    if (selectedMediaItems.length >= MAX_MEDIA_FILES) {
+      errors.push(`You can attach up to ${MAX_MEDIA_FILES} photos/videos`);
+      break;
+    }
+
+    const isImage = isImageMedia(file);
+    const isVideo = isVideoMedia(file);
+
+    if (!isImage && !isVideo) {
+      errors.push(`${file.name}: only photo or video files are allowed`);
+      continue;
+    }
+    if (isVideo && file.size > VIDEO_MAX_BYTES) {
+      errors.push(`${file.name}: video must be less than 100 MB`);
+      continue;
+    }
+    if (isImage && file.size > IMAGE_MAX_BYTES) {
+      errors.push(`${file.name}: photo must be less than 16 MB`);
+      continue;
+    }
+
+    selectedMediaItems.push({
+      id: ++mediaIdCounter,
+      file,
+      url: URL.createObjectURL(file),
+      kind: isVideo ? "video" : "image",
+    });
+  }
+
+  renderMediaLists();
+  alterMedia.value = "";
+  alterMediaFiles.value = "";
+
+  if (errors.length) alert(errors.join("\n"));
 }
 
 function syncAlterFrom(source) {
@@ -232,13 +249,11 @@ overrideMessageFiles.addEventListener("input", () => {
   overrideMessage.value = overrideMessageFiles.value;
 });
 alterMedia.addEventListener("change", () => {
-  setSelectedMedia(alterMedia.files[0]);
+  addMediaFiles(alterMedia.files);
 });
 alterMediaFiles.addEventListener("change", () => {
-  setSelectedMedia(alterMediaFiles.files[0]);
+  addMediaFiles(alterMediaFiles.files);
 });
-alterMediaClear.addEventListener("click", clearSelectedMedia);
-alterMediaClearFiles.addEventListener("click", clearSelectedMedia);
 
 const STATUS_LABELS = {
   initializing: "Connecting…",
