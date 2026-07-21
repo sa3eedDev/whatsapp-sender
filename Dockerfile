@@ -11,6 +11,7 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     NODE_ENV=production \
     PORT=80 \
+    DATA_ROOT=/data \
     WWEBJS_AUTH_PATH=/data/.wwebjs_auth
 
 WORKDIR /app
@@ -22,11 +23,11 @@ COPY server.js app.js ./
 COPY public ./public
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh \
-    && mkdir -p /data/.wwebjs_auth /app/uploads
+    && mkdir -p /data/.wwebjs_auth /data/uploads
 
 EXPOSE 80
 
-VOLUME ["/data", "/app/uploads"]
+VOLUME ["/data"]
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

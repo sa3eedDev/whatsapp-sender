@@ -1,24 +1,21 @@
 services:
   whatsapp-sender:
     build: .
-    # Coolify's proxy routes to this container port directly; the host port
-    # mapping is only needed when running locally without a reverse proxy.
     expose:
       - "80"
     ports:
       - "8080:80"
     volumes:
-      - wwebjs_auth:/data/.wwebjs_auth
-      - uploads:/app/uploads
+      - app_data:/data
     restart: unless-stopped
     shm_size: "256mb"
     environment:
       - PORT=80
+      - DATA_ROOT=/data
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
       - WWEBJS_AUTH_PATH=/data/.wwebjs_auth
       - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
       - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
 
 volumes:
-  wwebjs_auth:
-  uploads:
+  app_data:
