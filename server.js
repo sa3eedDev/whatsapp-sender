@@ -8,6 +8,12 @@ const QRCode = require("qrcode");
 const XLSX = require("xlsx");
 const { Server } = require("socket.io");
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
+const {
+  clerkMiddleware,
+  getAuth,
+  authenticateRequest,
+  clerkClient,
+} = require("@clerk/express");
 
 const PORT = process.env.PORT || 80;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -54,11 +60,41 @@ function decodeOriginalName(name) {
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: { origin: true, credentials: true },
+});
 
-app.use(cors());
+const PUBLIC_DIR = path.join(__dirname, "public");
+
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(clerkMiddleware());
+
+function requireUser(req, res, next) {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+app.get("/api/clerk-config", (_req, res) => {
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY;
+  if (!publishableKey) {
+    return res.status(500).json({ error: "Clerk is not configured" });
+  }
+  res.json({ publishableKey });
+});
+
+app.get("/app.html", (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    return res.redirect("/sign-in.html?redirect_url=/app.html");
+  }
+  res.sendFile(path.join(PUBLIC_DIR, "app.html"));
+});
+
+app.use(express.static(PUBLIC_DIR));
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -438,11 +474,11 @@ process.on("unhandledRejection", (err) => {
   addLog(`Unexpected error: ${err.message || err}`, "error");
 });
 
-app.get("/api/state", (_req, res) => {
+app.get("/api/state", requireUser, (_req, res) => {
   res.json(snapshot());
 });
 
-app.post("/api/whatsapp/restart", async (_req, res) => {
+app.post("/api/whatsapp/restart", requireUser, async (_req, res) => {
   if (state.sending) {
     return res.status(400).json({ error: "Cannot restart while sending messages" });
   }
@@ -450,7 +486,7 @@ app.post("/api/whatsapp/restart", async (_req, res) => {
   restartWhatsApp("manual");
 });
 
-app.post("/api/upload", upload.single("file"), (req, res) => {
+app.post("/api/upload", requireUser, upload.single("file"), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -484,7 +520,7 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
   }
 });
 
-app.delete("/api/files/:id", (req, res) => {
+app.delete("/api/files/:id", requireUser, (req, res) => {
   const idx = uploadedFiles.findIndex((f) => f.id === req.params.id);
   if (idx === -1) {
     return res.status(404).json({ error: "File not found" });
@@ -497,7 +533,7 @@ app.delete("/api/files/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/send", parseSendUpload, async (req, res) => {
+app.post("/api/send", requireUser, parseSendUpload, async (req, res) => {
   if (!state.ready) {
     return res.status(400).json({ error: "WhatsApp is not ready yet" });
   }
@@ -618,6 +654,35 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
     "info"
   );
   emitState();
+});
+
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (token) {
+      const request = new Request("http://localhost/socket.io", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await clerkClient.authenticateRequest(request);
+      if (result.isAuthenticated) {
+        socket.data.userId = result.toAuth().userId;
+        return next();
+      }
+    }
+
+    const result = await authenticateRequest({
+      clerkClient,
+      request: socket.request,
+      options: {},
+    });
+    if (!result.isAuthenticated) {
+      return next(new Error("Unauthorized"));
+    }
+    socket.data.userId = result.toAuth().userId;
+    next();
+  } catch (_) {
+    next(new Error("Unauthorized"));
+  }
 });
 
 io.on("connection", (socket) => {

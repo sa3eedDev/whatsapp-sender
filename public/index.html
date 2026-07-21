@@ -16,6 +16,11 @@
     <div class="bg-grid" aria-hidden="true"></div>
 
     <main class="home-shell">
+      <nav class="home-nav">
+        <span class="home-nav-brand">WhatsApp Sender</span>
+        <div id="authNav"></div>
+      </nav>
+
       <header class="home-hero">
         <p class="eyebrow">Bulk messenger</p>
         <h1>Send WhatsApp messages to hundreds of contacts in minutes</h1>
@@ -92,5 +97,10 @@
         <a class="btn primary" href="/app.html">Get started</a>
       </footer>
     </main>
+
+    <script src="/auth.js"></script>
+    <script>
+      mountAuthNav(document.getElementById("authNav"));
+    </script>
   </body>
 </html>

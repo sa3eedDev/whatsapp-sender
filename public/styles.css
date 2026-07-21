@@ -693,6 +693,60 @@ h2 {
 }
 
 /* Homepage */
+.home-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.home-nav-brand {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.auth-nav-signed-out,
+.auth-nav-signed-in {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auth-btn {
+  text-decoration: none;
+  font-size: 0.88rem;
+  padding: 0.45rem 0.85rem;
+}
+
+.auth-shell {
+  width: min(480px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.5rem 0 4rem;
+}
+
+.auth-back {
+  display: inline-block;
+  margin-bottom: 1rem;
+  text-decoration: none;
+}
+
+.auth-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+}
+
+.auth-card .hint {
+  margin-bottom: 1.25rem;
+}
+
+.clerk-user-button {
+  display: flex;
+  align-items: center;
+}
+
+/* Homepage */
 .home-body {
   min-height: 100vh;
 }

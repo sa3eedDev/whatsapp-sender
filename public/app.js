@@ -1,4 +1,4 @@
-const socket = io();
+let socket;
 
 const statusPill = document.getElementById("statusPill");
 const statusText = document.getElementById("statusText");
@@ -514,13 +514,28 @@ clearLogsBtn.addEventListener("click", () => {
   logList.innerHTML = "";
 });
 
-socket.on("state", applyState);
-socket.on("log", (entry) => {
-  appendLog(entry);
-  logList.scrollTop = logList.scrollHeight;
-});
+async function bootApp() {
+  if (!(await requireSignedIn())) return;
 
-fetch("/api/state")
-  .then((r) => r.json())
-  .then(applyState)
-  .catch(() => {});
+  await mountAuthNav(document.getElementById("authNav"));
+
+  const token = await getClerkToken();
+  socket = io({ auth: { token } });
+
+  socket.on("state", applyState);
+  socket.on("log", (entry) => {
+    appendLog(entry);
+    logList.scrollTop = logList.scrollHeight;
+  });
+
+  try {
+    const res = await fetch("/api/state");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to load state");
+    applyState(data);
+  } catch (_) {
+    /* socket will push state when connected */
+  }
+}
+
+bootApp();
