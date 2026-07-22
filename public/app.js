@@ -266,7 +266,8 @@ const STATUS_LABELS = {
 };
 
 function applyState(state) {
-  const status = state.status || "initializing";
+  // Prefer ready over a stale status (e.g. loading_screen resetting to initializing).
+  const status = state.ready ? "ready" : state.status || "initializing";
   statusPill.dataset.status = status;
   statusText.textContent = STATUS_LABELS[status] || status;
 

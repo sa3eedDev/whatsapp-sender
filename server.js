@@ -237,6 +237,9 @@ class UserSession {
 
   bindClientEvents(instance) {
     instance.on("loading_screen", (percent, message) => {
+      // Don't clobber a connected session — loading_screen can still fire
+      // during sync after ready, which left the UI stuck on "Connecting…".
+      if (this.state.ready) return;
       this.state.status = "initializing";
       this.addLog(`Loading WhatsApp… ${percent}% ${message || ""}`.trim(), "info");
       this.emitState();
