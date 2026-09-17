@@ -225,22 +225,147 @@ function toPhoneDigits(phone) {
   return digits;
 }
 
+// MediaData.__x_id is enumerable and overwrites the outgoing Msg id when
+// whatsapp-web.js spreads the media model into the message. Hide it so
+// getSender() can initialize the real message. (Also patched in Utils.js.)
+async function ensureMediaIdFix(instance) {
+  const page = instance?.pupPage;
+  if (!page) return;
+  try {
+    await page.evaluate(() => {
+      if (!window.WWebJS || typeof window.WWebJS.processMediaData !== "function") {
+        return;
+      }
+      if (window.__xIdMediaFix) return;
+      const original = window.WWebJS.processMediaData.bind(window.WWebJS);
+      window.WWebJS.processMediaData = async function patchedProcessMediaData(
+        mediaInfo,
+        opts
+      ) {
+        const mediaData = await original(mediaInfo, opts);
+        if (
+          mediaData &&
+          typeof mediaData === "object" &&
+          Object.prototype.hasOwnProperty.call(mediaData, "__x_id")
+        ) {
+          const value = mediaData.__x_id;
+          Object.defineProperty(mediaData, "__x_id", {
+            enumerable: false,
+            configurable: true,
+            writable: true,
+            value,
+          });
+        }
+        return mediaData;
+      };
+      window.__xIdMediaFix = true;
+    });
+  } catch (_) {
+    /* send path still has the Utils.js delete */
+  }
+}
+
+// Apply WhatsApp Web LID workarounds so sendMessage/getChat don't crash with
+// "Data passed to getter must include an id property" / "No LID for user".
+async function applyLidWorkarounds(instance) {
+  try {
+    const result = await instance.pupPage.evaluate(() => {
+      if (window.__waLidPatchApplied) return { ok: true, already: true };
+      if (!window.WWebJS?.injectToFunction) {
+        return { ok: false, reason: "injectToFunction missing" };
+      }
+
+      // Force non-LID path — missing accountLid is what crashes media sends.
+      window.WWebJS.injectToFunction(
+        {
+          module: "WAWebLid1X1MigrationGating",
+          function: "Lid1X1MigrationUtils.isLidMigrated",
+        },
+        () => false
+      );
+
+      window.WWebJS.injectToFunction(
+        {
+          module: "WAWebLid1X1MigrationGating",
+          function: "shouldHaveAccountLid",
+        },
+        () => false
+      );
+
+      window.WWebJS.injectToFunction(
+        { module: "WAWebLidMigrationUtils", function: "toUserLid" },
+        (module, func, wid) => {
+          try {
+            return func.call(module, wid);
+          } catch {
+            return wid;
+          }
+        }
+      );
+
+      window.__waLidPatchApplied = true;
+      return { ok: true, already: false };
+    });
+    if (result?.ok && !result.already) {
+      addLog("Applied WhatsApp LID compatibility patch", "info");
+    } else if (result && !result.ok) {
+      addLog(`LID workaround skipped: ${result.reason}`, "info");
+    }
+  } catch (err) {
+    addLog(`LID workaround skipped: ${err.message}`, "info");
+  }
+}
+
 // Resolve a real WhatsApp chat id. Blindly using 966…@c.us often fails after
 // WhatsApp's LID changes with: "Data passed to getter must include an id…".
 async function resolveChatId(phone) {
   const digits = toPhoneDigits(phone);
   if (!digits) return { ok: false, reason: "invalid phone number" };
 
+  let numberId;
   try {
-    const numberId = await client.getNumberId(digits);
-    if (!numberId) {
-      return { ok: false, reason: "number is not on WhatsApp" };
-    }
-    return { ok: true, chatId: numberId._serialized };
-  } catch (_) {
-    // Fall back to constructed id; send may still work for known contacts.
-    return { ok: true, chatId: `${digits}@c.us` };
+    numberId = await client.getNumberId(digits);
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `could not look up number (session may need reconnect): ${err.message}`,
+    };
   }
+
+  if (!numberId || !numberId._serialized) {
+    return { ok: false, reason: "number is not on WhatsApp" };
+  }
+
+  const chatId = numberId._serialized;
+
+  // Best-effort: warm the chat in WhatsApp's store. Don't abort if this fails —
+  // sendMessage still has a chance, and aborting here caused false failures.
+  try {
+    await client.getChatById(chatId);
+  } catch (_) {
+    try {
+      await client.pupPage.evaluate(async (id) => {
+        try {
+          const wid = window.require("WAWebWidFactory").createWid(id);
+          let find = null;
+          try {
+            find = window.require("WAWebFindChatAction").findOrCreateLatestChat;
+          } catch (_) {
+            find = window.Store?.FindOrCreateChat?.findOrCreateLatestChat;
+          }
+          if (!find) return null;
+          const result = await find(wid);
+          return result?.chat?.id?._serialized || null;
+        } catch {
+          return null;
+        }
+      }, chatId);
+    } catch (_) {
+      /* send path will surface a clearer error */
+    }
+  }
+
+  return { ok: true, chatId, digits };
 }
 
 const AUTH_PATH = process.env.WWEBJS_AUTH_PATH || path.join(__dirname, ".wwebjs_auth");
@@ -347,7 +472,7 @@ function bindClientEvents(instance) {
     emitState();
   });
 
-  instance.on("ready", () => {
+  instance.on("ready", async () => {
     clearQrWatchdog();
     initAttempt = 0;
     state.status = "ready";
@@ -355,6 +480,8 @@ function bindClientEvents(instance) {
     state.qrDataUrl = null;
     addLog("WhatsApp is ready", "success");
     emitState();
+    await applyLidWorkarounds(instance);
+    await ensureMediaIdFix(instance);
   });
 
   instance.on("auth_failure", (msg) => {
@@ -612,13 +739,14 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
         }
 
         const chatId = resolved.chatId;
-        // linkPreview:false avoids a known WhatsApp Web crash:
+        // linkPreview/sendSeen off avoids known WhatsApp Web LID crashes:
         // "Data passed to getter must include an id property…"
-        const sendOpts = { linkPreview: false };
+        const sendOpts = { linkPreview: false, sendSeen: false };
 
         if (mediaItems.length) {
           for (let i = 0; i < mediaItems.length; i++) {
             const item = mediaItems[i];
+            await ensureMediaIdFix(client);
             await client.sendMessage(chatId, item.media, {
               ...sendOpts,
               caption: i === 0 && message ? message : undefined,
@@ -637,8 +765,10 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
         state.progress.failed += 1;
         const msg = String(err.message || err);
         const friendly = msg.includes("must include an id property")
-          ? "WhatsApp could not open this chat (number missing, blocked, or session needs reconnect)"
-          : msg;
+          ? "media send failed (WhatsApp media id bug) — rebuild/restart if this persists"
+          : msg.includes("No LID")
+            ? "WhatsApp LID error — reconnect WhatsApp (scan QR again)"
+            : msg;
         addLog(`Failed ${row.phone}: ${friendly}`, "error");
       }
       emitState();
