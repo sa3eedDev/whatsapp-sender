@@ -216,13 +216,31 @@ function loadExcel(filePath, originalName) {
   return rows;
 }
 
-function toChatId(phone) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("966")) return `${digits}@c.us`;
+function toPhoneDigits(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.startsWith("966")) return digits;
   if (digits.startsWith("0") && digits.length === 10) {
-    return `966${digits.substring(1)}@c.us`;
+    return `966${digits.substring(1)}`;
   }
-  return `${digits}@c.us`;
+  return digits;
+}
+
+// Resolve a real WhatsApp chat id. Blindly using 966…@c.us often fails after
+// WhatsApp's LID changes with: "Data passed to getter must include an id…".
+async function resolveChatId(phone) {
+  const digits = toPhoneDigits(phone);
+  if (!digits) return { ok: false, reason: "invalid phone number" };
+
+  try {
+    const numberId = await client.getNumberId(digits);
+    if (!numberId) {
+      return { ok: false, reason: "number is not on WhatsApp" };
+    }
+    return { ok: true, chatId: numberId._serialized };
+  } catch (_) {
+    // Fall back to constructed id; send may still work for known contacts.
+    return { ok: true, chatId: `${digits}@c.us` };
+  }
 }
 
 const AUTH_PATH = process.env.WWEBJS_AUTH_PATH || path.join(__dirname, ".wwebjs_auth");
@@ -572,7 +590,6 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
 
   try {
     for (const row of state.rows) {
-      const chatId = toChatId(row.phone);
       const message = alterEnabled
         ? overrideMessage
         : String(row.message || "").trim();
@@ -585,10 +602,25 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
       }
 
       try {
+        const resolved = await resolveChatId(row.phone);
+        if (!resolved.ok) {
+          state.progress.failed += 1;
+          addLog(`Failed ${row.phone}: ${resolved.reason}`, "error");
+          emitState();
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+
+        const chatId = resolved.chatId;
+        // linkPreview:false avoids a known WhatsApp Web crash:
+        // "Data passed to getter must include an id property…"
+        const sendOpts = { linkPreview: false };
+
         if (mediaItems.length) {
           for (let i = 0; i < mediaItems.length; i++) {
             const item = mediaItems[i];
             await client.sendMessage(chatId, item.media, {
+              ...sendOpts,
               caption: i === 0 && message ? message : undefined,
               sendMediaAsDocument: false,
             });
@@ -597,13 +629,17 @@ app.post("/api/send", parseSendUpload, async (req, res) => {
             }
           }
         } else {
-          await client.sendMessage(chatId, message);
+          await client.sendMessage(chatId, message, sendOpts);
         }
         state.progress.sent += 1;
         addLog(`Sent to ${row.phone}`, "success");
       } catch (err) {
         state.progress.failed += 1;
-        addLog(`Failed ${row.phone}: ${err.message}`, "error");
+        const msg = String(err.message || err);
+        const friendly = msg.includes("must include an id property")
+          ? "WhatsApp could not open this chat (number missing, blocked, or session needs reconnect)"
+          : msg;
+        addLog(`Failed ${row.phone}: ${friendly}`, "error");
       }
       emitState();
       await new Promise((r) => setTimeout(r, 3000));
