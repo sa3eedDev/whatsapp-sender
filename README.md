@@ -15,34 +15,42 @@ The landing page at `/` explains the workflow; the sender UI lives at `/app.html
 
 ## Tech stack
 
-| Layer | Technology |
-|-------|------------|
-| Runtime | Node.js 20 |
-| Server | Express 5, Socket.io (real-time status & logs) |
-| WhatsApp | [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) (Puppeteer + Chromium) |
-| Spreadsheets | [SheetJS (xlsx)](https://sheetjs.com/) |
-| Uploads | Multer |
-| QR codes | qrcode |
-| Frontend | Vanilla HTML/CSS/JS |
-| Container | Docker (Debian + Chromium) |
+
+| Layer        | Technology                                                                               |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| Runtime      | Node.js 20                                                                               |
+| Server       | Express 5, Socket.io (real-time status & logs)                                           |
+| WhatsApp     | [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) (Puppeteer + Chromium) |
+| Spreadsheets | [SheetJS (xlsx)](https://sheetjs.com/)                                                   |
+| Uploads      | Multer                                                                                   |
+| QR codes     | qrcode                                                                                   |
+| Frontend     | Vanilla HTML/CSS/JS                                                                      |
+| Container    | Docker (Debian + Chromium)                                                               |
+
 
 Persistent data:
 
 - `uploads/` — Excel files and a `files.json` manifest
 - `.wwebjs_auth/` (or `WWEBJS_AUTH_PATH`) — WhatsApp session so you stay logged in across restarts
 
+
+
 ## Excel format
 
 Create a spreadsheet (`.xlsx` or `.xls`) with at least these columns:
 
-| Column (Arabic) | Column (English) | Description |
-|-----------------|------------------|-------------|
-| `الرقم` | `phone` | Phone number (e.g. `0501234567` or `966501234567`) |
-| `الرساله` | `message` | Message text for that contact |
 
-- If a sheet named **`whatsapp`** exists, it is used; otherwise the first sheet is read.
+| Column (Arabic) | Column (English) | Description                                        |
+| --------------- | ---------------- | -------------------------------------------------- |
+| `الرقم`         | `phone`          | Phone number (e.g. `0501234567` or `966501234567`) |
+| `الرساله`       | `message`        | Message text for that contact                      |
+
+
+- If a sheet named `whatsapp` exists, it is used; otherwise the first sheet is read.
 - Rows without a phone number are skipped.
 - Saudi numbers starting with `0` are normalized to the `966` country code automatically.
+
+
 
 ## How to use
 
@@ -54,12 +62,16 @@ Create a spreadsheet (`.xlsx` or `.xls`) with at least these columns:
 6. Click **Send** and watch progress and logs update live.
 7. To reconnect later, use **Refresh WhatsApp** if the QR stalls, or **Reconnect WhatsApp** after a session expires.
 
+
+
 ### Media limits
 
 - Up to **10** photos/videos per send
 - Photos: max **16 MB** each
 - Videos: max **100 MB** each
 - When media is attached, the custom/override message is sent as the caption on the first item
+
+
 
 ## Run locally
 
@@ -89,12 +101,16 @@ On first run, WhatsApp session data is stored in `.wwebjs_auth/` in the project 
 
 ### Environment variables (local)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `80` | HTTP port |
-| `WWEBJS_AUTH_PATH` | `.wwebjs_auth` | WhatsApp session storage |
-| `PUPPETEER_EXECUTABLE_PATH` | *(bundled Chromium)* | Path to Chromium/Chrome (set in Docker) |
-| `QR_TIMEOUT_MS` | `45000` | Restart WhatsApp client if no QR within this time |
+
+| Variable                    | Default              | Description                                       |
+| --------------------------- | -------------------- | ------------------------------------------------- |
+| `PORT`                      | `80`                 | HTTP port                                         |
+| `WWEBJS_AUTH_PATH`          | `.wwebjs_auth`       | WhatsApp session storage                          |
+| `PUPPETEER_EXECUTABLE_PATH` | *(bundled Chromium)* | Path to Chromium/Chrome (set in Docker)           |
+| `QR_TIMEOUT_MS`             | `45000`              | Restart WhatsApp client if no QR within this time |
+
+
+
 
 ## Run with Docker
 
@@ -118,15 +134,19 @@ The entrypoint clears stale Chromium lock files on startup so redeploys (e.g. on
 - Set `shm_size: 256mb` (already in `docker-compose.yml`) — Chromium needs shared memory.
 - Persist `/data/.wwebjs_auth` and `/app/uploads` so sessions and files survive restarts.
 
+
+
 ## API overview
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/state` | Current WhatsApp status, progress, file list |
-| `POST` | `/api/upload` | Upload Excel (multipart field: `file`) |
-| `DELETE` | `/api/files/:id` | Remove a saved Excel file |
-| `POST` | `/api/send` | Start sending (`fileId`, optional `alterMessage`, `overrideMessage`, `media[]`) |
-| `POST` | `/api/whatsapp/restart` | Restart WhatsApp client / refresh QR |
+
+| Method   | Path                    | Description                                                                     |
+| -------- | ----------------------- | ------------------------------------------------------------------------------- |
+| `GET`    | `/api/state`            | Current WhatsApp status, progress, file list                                    |
+| `POST`   | `/api/upload`           | Upload Excel (multipart field: `file`)                                          |
+| `DELETE` | `/api/files/:id`        | Remove a saved Excel file                                                       |
+| `POST`   | `/api/send`             | Start sending (`fileId`, optional `alterMessage`, `overrideMessage`, `media[]`) |
+| `POST`   | `/api/whatsapp/restart` | Restart WhatsApp client / refresh QR                                            |
+
 
 Socket.io emits `state` and `log` events to all connected clients.
 
@@ -145,8 +165,12 @@ docker-compose.yml
 docker-entrypoint.sh
 ```
 
+
+
 ## Notes
 
 - This uses the unofficial WhatsApp Web protocol. Use responsibly and follow WhatsApp’s terms of service; bulk messaging can trigger account restrictions.
 - Only one WhatsApp session is active per server instance. For multi-user setups with separate accounts, run separate instances or use per-user isolation (see the `cursor/clerk-authentication` branch if merged).
 - Keep session and upload volumes backed up if you rely on saved logins or file libraries.
+- Auto update is enabled by defualt.
+
