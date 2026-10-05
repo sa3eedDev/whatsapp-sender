@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-color-emoji \
     ca-certificates \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
