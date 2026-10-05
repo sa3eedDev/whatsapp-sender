@@ -16,6 +16,11 @@ services:
       - PORT=80
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
       - WWEBJS_AUTH_PATH=/data/.wwebjs_auth
+      # On every start (including restart), pull main if GitHub has a new commit.
+      # Set AUTO_UPDATE=false to keep the image exactly as built.
+      - AUTO_UPDATE=true
+      - GIT_BRANCH=main
+      - GIT_REPO_URL=https://github.com/sa3eedDev/whatsapp-sender.git
 
 volumes:
   wwebjs_auth:
